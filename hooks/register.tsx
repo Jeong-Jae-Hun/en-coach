@@ -42,6 +42,8 @@ export const parseReply = (source: string, reply: string): Suggestion => {
   return { source, options, notes }
 }
 
+export const formatTokens = (n: number) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`)
+
 // 새 번역이 시작되면 이전 요청은 끊는다
 let stop = new AbortController()
 
@@ -219,19 +221,31 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" gap={1}>
-        <Text dimColor>
-          이 세션 Haiku 호출 {u.calls}회 · 입력 {u.input} · 출력 {u.output} 토큰
-        </Text>
-        {list.length === 0 && <Text dimColor>아직 기록이 없습니다.</Text>}
+        <Box justifyContent="space-between">
+          <Text bold>기록 {list.length}개</Text>
+          <Text dimColor>
+            Haiku {u.calls}회 · 입력 {formatTokens(u.input)} · 출력 {formatTokens(u.output)}
+          </Text>
+        </Box>
+        {list.length === 0 && <Text dimColor>한글로 프롬프트를 쓰면 여기에 쌓입니다.</Text>}
         {list.map(one => (
-          <Box flexDirection="column">
+          <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1}>
             <Text dimColor>{one.source}</Text>
-            {one.options.map(option => (
-              <Text>→ {option}</Text>
-            ))}
-            {one.notes.map(note => (
-              <Text dimColor>· {note}</Text>
-            ))}
+            <Box flexDirection="column" marginTop={1}>
+              {one.options.map((option, i) => (
+                <Box>
+                  <Text color="suggestion">{i + 1} </Text>
+                  <Text bold={i === 0}>{option}</Text>
+                </Box>
+              ))}
+            </Box>
+            {one.notes.length > 0 && (
+              <Box flexDirection="column" marginTop={1}>
+                {one.notes.map(note => (
+                  <Text color="subtle">팁 · {note}</Text>
+                ))}
+              </Box>
+            )}
           </Box>
         ))}
       </Box>

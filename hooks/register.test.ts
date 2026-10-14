@@ -1,7 +1,7 @@
 import type { PromptEditInput, PromptEditResult, RenderElement } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { isKorean, parseReply } from './register'
+import { formatTokens, isKorean, parseReply } from './register'
 
 const REPLY = `1. Write tests for this function.
 2. Add tests here.
@@ -46,6 +46,11 @@ test('구분선이 없어도 팁 줄을 문장으로 착각하지 않는다', ()
   const s = parseReply('원문', REPLY.replace('---\n', ''))
   expect(s.options).toEqual(['Write tests for this function.', 'Add tests here.'])
   expect(s.notes).toHaveLength(1)
+})
+
+test('토큰 수는 천 단위부터 k로 줄인다', () => {
+  expect(formatTokens(950)).toBe('950')
+  expect(formatTokens(3240)).toBe('3.2k')
 })
 
 test('응답을 추천 문장과 노트로 나눈다', () => {
