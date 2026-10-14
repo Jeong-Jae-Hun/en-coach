@@ -315,11 +315,11 @@ export const register: Register = on => {
             {s !== null && <Button key="clear" label="닫기" onPress={() => update($, suggestion, () => null)} />}
           </Box>
         </Box>
+        {/* 번호와 문장을 한 덩어리로 그려 줄바꿈돼도 번호가 첫 줄에 붙게 한다. 문장 어디를 눌러도 넣는다 */}
         {s?.options.map((option, i) => (
-          <Box alignItems="flex-start">
-            <Button key={`use-${i}`} label="넣기" hotkey={`${i + 1}`} onPress={() => $.prompt.fill({ text: option, mode: 'replace' })} />
-            <Text> {option}</Text>
-          </Box>
+          <Button key={`use-${i}`} plain hotkey={`${i + 1}`} onPress={() => $.prompt.fill({ text: option, mode: 'replace' })}>
+            {option}
+          </Button>
         ))}
         {s?.notes.map(note => (
           <Text dimColor>· {note}</Text>

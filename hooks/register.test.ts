@@ -86,7 +86,7 @@ test('한글 프롬프트를 보내면 입력창 위에 영어 추천이 뜬다'
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'en-coach', surface, ...BAND })
-    expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeDefined()
+    expect(await ui.find({ key: 'use-0' })).toBeDefined()
     await ui.unmount()
   }
 
@@ -111,7 +111,7 @@ test('영어 프롬프트를 보내면 지난 추천을 치운다', async ($, on
   await clock.advance(10)
 
   const ui = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeUndefined()
+  expect(await ui.find({ key: 'use-0' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -140,12 +140,12 @@ test('타이핑을 멈추면 초를 세다가 자동 번역한다', async ($, on
   await typeInto($)
   const ui = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
   expect(await ui.find({ type: 'Text', text: /3초 뒤 자동 번역/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeUndefined()
+  expect(await ui.find({ key: 'use-0' })).toBeUndefined()
   await ui.unmount()
 
   await clock.advance(3000)
   const after = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
-  expect(await after.find({ type: 'Text', text: /Write tests for this function/ })).toBeDefined()
+  expect(await after.find({ key: 'use-0' })).toBeDefined()
   await after.unmount()
 })
 
@@ -160,7 +160,7 @@ test('번역 버튼을 누르면 기다리지 않고 바로 번역한다', async
   await typeInto($)
   const ui = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
   await ui.press({ key: 'translate' })
-  expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeDefined()
+  expect(await ui.find({ key: 'use-0' })).toBeDefined()
   await ui.unmount()
 })
 
