@@ -2,7 +2,7 @@ import type { PromptEditInput, PromptEditResult, RenderElement } from 'claude-co
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { formatTokens, glossaryPrompt, isKorean, parseReply, parseTermArgs, pickedNumber } from './register'
+import { formatTokens, glossaryPrompt, isKorean, parseReply, parseTermArgs, pickedNumber, splitEnglishHead } from './register'
 
 const REPLY = `1. Write tests for this function.
 2. Add tests here.
@@ -75,6 +75,34 @@ test('구분선이 없어도 팁 줄을 문장으로 착각하지 않는다', ()
   const s = parseReply('원문', REPLY.replace('---\n', ''))
   expect(s.options).toEqual(['Write tests for this function.', 'Add tests here.'])
   expect(s.notes).toHaveLength(1)
+})
+
+test('여러 줄 문장은 번호 줄 아래 줄까지 한 문장으로 받는다', () => {
+  const s = parseReply('원문', `1. Fix the login bug.
+- Add tests too.
+
+2. Fix login.
+Add tests.
+---
+- 팁`)
+  expect(s.options).toEqual(['Fix the login bug.\n- Add tests too.', 'Fix login.\nAdd tests.'])
+  expect(s.notes).toEqual(['팁'])
+})
+
+test('구분선이 없으면 팁 줄에서 문장을 끊는다', () => {
+  const s = parseReply('원문', `1. Fix the login bug.
+and add tests.
+2. Fix login.
+- 팁`)
+  expect(s.options).toEqual(['Fix the login bug.\nand add tests.', 'Fix login.'])
+  expect(s.notes).toEqual(['팁'])
+})
+
+test('앞의 영어 문장은 떼고 한글이 시작된 문장부터 번역한다', () => {
+  expect(splitEnglishHead('Write tests. 린트도 돌려줘')).toEqual({ head: 'Write tests. ', rest: '린트도 돌려줘' })
+  expect(splitEnglishHead('Write tests.\n린트도 돌려줘')).toEqual({ head: 'Write tests.\n', rest: '린트도 돌려줘' })
+  expect(splitEnglishHead('fix 로그인 bug')).toEqual({ head: '', rest: 'fix 로그인 bug' })
+  expect(isKorean('Write tests for this function. 좋아')).toBe(false)
 })
 
 test('토큰 수는 천 단위부터 k로 줄인다', () => {
@@ -223,6 +251,27 @@ test('Ctrl/Option+숫자를 누르면 그 번호의 영어 문장으로 바꾼�
 
   const withCtrl = await pressKey($, KOREAN, { key: '1', ctrl: true })
   expect(withCtrl.text).toBe('Write tests for this function.')
+})
+
+test('추천을 넣고 한글을 이어 쓰면 한글만 번역하고 넣을 땐 앞 영어를 살린다', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  mock.env(on, { HOME: '/home/me' })
+  const files = mockFs(on)
+  const sent: string[] = []
+  on('model.complete', ($, e) => {
+    sent.push(e.prompt)
+    return { value: { isAnswered: true, text: REPLY, usage } }
+  })
+  echoEdit(on)
+
+  const head = 'Run the linter. '
+  await typeInto($, `${head}${KOREAN}`)
+  await clock.advance(3000)
+  expect(sent).toEqual([KOREAN])
+
+  const picked = await pressKey($, `${head}${KOREAN}`, { key: '1', meta: true })
+  expect(picked.text).toBe(`${head}Write tests for this function.`)
 })
 
 test('용어 명령을 목록·추가·삭제로 읽는다', () => {

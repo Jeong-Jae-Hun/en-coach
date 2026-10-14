@@ -26,27 +26,55 @@ Given a Korean prompt, reply in exactly this format and nothing else:
 - <optional second tip in Korean>
 Write the tips in Korean, never English.
 Then, for each proper noun, product or internal name, or slang whose English form you are not sure of and that the glossary does not cover, add one line: ? <the Korean term as written>
+If the prompt spans several lines, translate every line and keep the line breaks inside each numbered item; write any list in it with "-" bullets, not numbers.
 Keep code identifiers, file paths, commands and English terms unchanged.`
 
-export const isKorean = (text: string) =>
-  text.trim().length >= MIN_LENGTH && !text.trimStart().startsWith('/') && /[가-힣]/.test(text)
+// 넣기로 넣은 추천 뒤에 한글을 이어 쓰면 앞의 영어 문장은 그대로 두고 한글이 시작된 문장부터 번역한다.
+// 경계는 줄바꿈이나 문장부호+공백이다. 한계: 'e.g. ' 같은 약어도 경계로 본다
+export const splitEnglishHead = (text: string) => {
+  const first = text.search(/[가-힣]/)
+  if (first <= 0) {
+    return { head: '', rest: text }
+  }
+  const before = text.slice(0, first)
+  const cut = Math.max(
+    before.lastIndexOf('\n') + 1,
+    ...[...before.matchAll(/[.!?]\s+/g)].map(m => m.index + m[0].length),
+  )
 
-// 구분선(---)을 빼먹는 응답이 있어 줄 모양으로 가른다: 번호 줄만 문장, 글머리표 줄만 팁
+  return { head: text.slice(0, cut), rest: text.slice(cut) }
+}
+
+export const isKorean = (text: string) =>
+  !text.trimStart().startsWith('/') &&
+  /[가-힣]/.test(text) &&
+  splitEnglishHead(text).rest.trim().length >= MIN_LENGTH
+
+// 여러 줄 프롬프트는 번호 줄 아래로 문장이 이어진다 — 다음 번호 줄 전까지 앞 문장에 붙인다.
+// 구분선(---)을 빼먹는 응답이 있어, 그때는 글머리표·모르는 용어 줄에서 문장을 끊는다
 export const parseReply = (source: string, reply: string): Suggestion => {
   const lines = reply.split('\n').map(line => line.trim())
-  const options = lines
-    .filter(line => /^\d+[.)]\s+/.test(line))
-    .map(line => line.replace(/^\d+[.)]\s+/, ''))
-    .slice(0, 2)
-  const notes = lines
+  const sep = lines.indexOf('---')
+  const tail = sep === -1 ? lines : lines.slice(sep + 1)
+  const options: string[] = []
+  for (const line of sep === -1 ? lines : lines.slice(0, sep)) {
+    if (/^\d+[.)]\s+/.test(line)) {
+      options.push(line.replace(/^\d+[.)]\s+/, ''))
+    } else if (sep === -1 && /^([-*·•]|\?)\s+/.test(line)) {
+      break
+    } else if (options.length > 0) {
+      options[options.length - 1] += `\n${line}`
+    }
+  }
+  const notes = tail
     .filter(line => /^[-*·•]\s+/.test(line))
     .map(line => line.replace(/^[-*·•]\s+/, ''))
-  const unknown = lines
+  const unknown = tail
     .filter(line => /^\?\s+/.test(line))
     .map(line => line.replace(/^\?\s+/, ''))
     .filter(term => term.length > 0 && source.includes(term))
 
-  return { source, options, notes, unknown }
+  return { source, options: options.slice(0, 2).map(option => option.trim()), notes, unknown }
 }
 
 const copyText = async ($: EngineInterface, text: string, surface: UiPressArgument['surface']) => {
@@ -154,9 +182,10 @@ const suggest = async ($: EngineInterface, text: string, force = false) => {
   const mine = new AbortController()
   stop = mine
   await update($, isBusy, () => true)
+  const { head, rest } = splitEnglishHead(text)
   try {
     const r = await $.model.complete(
-      { model: MODEL, system: SYSTEM, prompt: glossaryPrompt(text, await readGlossary($)), effort: 'low', maxTokens: 400, timeoutMs: 15000 },
+      { model: MODEL, system: SYSTEM, prompt: glossaryPrompt(rest, await readGlossary($)), effort: 'low', maxTokens: 800, timeoutMs: 15000 },
       { signal: mine.signal },
     )
     // 끊긴 요청도 비용은 든다 — 응답 여부와 상관없이 센다
@@ -166,7 +195,8 @@ const suggest = async ($: EngineInterface, text: string, force = false) => {
       output: u.output + r.usage.output_tokens,
     }))
     if (r.isAnswered && stop === mine) {
-      const next = parseReply(text, r.text)
+      const reply = parseReply(text, r.text)
+      const next = { ...reply, options: reply.options.map(option => head + option) }
       await update($, suggestion, () => next)
       await update($, history, list =>
         [next, ...list.filter(one => one.source !== text)].slice(0, HISTORY_LIMIT),
