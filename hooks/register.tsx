@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, Timer, UiPressArgument } from 'claude-code'
 
 import type { Suggestion } from '../types'
 
@@ -47,6 +47,27 @@ export const parseReply = (source: string, reply: string): Suggestion => {
     .filter(term => term.length > 0 && source.includes(term))
 
   return { source, options, notes, unknown }
+}
+
+const copyText = async ($: EngineInterface, text: string, surface: UiPressArgument['surface']) => {
+  const r = await $.ui.copy({ text, surface })
+  $.ui.toast(r.isCopied ? '복사했습니다' : '이 화면에선 복사할 수 없습니다')
+}
+
+// ─── 숫자 키 ───
+// 맥 영문 자판에서 Option+1·2·3 은 수정키 없이 ¡ ™ £ 로 들어온다(한글 자판은 meta 가 붙은 숫자).
+// 그래서 두 모양을 다 받는다. 한계: 이 세 글자를 일부러 칠 수는 없게 된다
+const OPTION_DIGITS: Record<string, number> = { '¡': 1, '™': 2, '£': 3 }
+
+export const pickedNumber = (key: { key: string; ctrl?: true; meta?: true } | undefined, inputText: string) => {
+  if (key === undefined) {
+    return NaN
+  }
+  if (key.ctrl || key.meta) {
+    return Number(key.key)
+  }
+
+  return OPTION_DIGITS[inputText] ?? NaN
 }
 
 // ─── 용어집 ───
@@ -246,7 +267,7 @@ export const register: Register = on => {
   // 그래도 Ctrl+숫자를 편집으로 보내는 터미널(kitty 키 프로토콜 등)을 위해 ctrl 도 받아 둔다
   // 입력창이 비었을 땐 띠의 버튼 hotkey 가 맨 숫자를 받는다 (엔진 규칙)
   on('prompt.edit', async ($, e, next) => {
-    const picked = e.key?.ctrl || e.key?.meta ? Number(e.key.key) : NaN
+    const picked = pickedNumber(e.key, e.inputText)
     if (picked === 3) {
       const d = await read($, draft)
       if (d !== null) {
@@ -315,12 +336,20 @@ export const register: Register = on => {
             {s !== null && <Button key="clear" label="닫기" onPress={() => update($, suggestion, () => null)} />}
           </Box>
         </Box>
-        {/* 번호와 문장을 한 덩어리로 그려 줄바꿈돼도 번호가 첫 줄에 붙게 한다. 문장 어디를 눌러도 넣는다 */}
+        {/* 문장은 Text 로 그려 끝까지 줄바꿈되게 한다(데스크톱 버튼은 한 줄로 잘린다). 번호는 같은 Text 안이라 첫 줄에 붙는다 */}
         {s?.options.map((option, i) => (
-          <Button key={`use-${i}`} plain hotkey={`${i + 1}`} onPress={() => $.prompt.fill({ text: option, mode: 'replace' })}>
+          <Text wrap="wrap">
+            <Text color="suggestion">{i + 1} </Text>
             {option}
-          </Button>
+          </Text>
         ))}
+        {s !== null && s.options.length > 0 && (
+          <Box gap={1}>
+            {s.options.map((option, i) => (
+              <Button key={`use-${i}`} hotkey={`${i + 1}`} label={`${i + 1}번 넣기`} onPress={() => $.prompt.fill({ text: option, mode: 'replace' })} />
+            ))}
+          </Box>
+        )}
         {s?.notes.map(note => (
           <Text dimColor>· {note}</Text>
         ))}
@@ -347,7 +376,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const list = await read($, history)
     const u = await read($, usage)
 
@@ -360,7 +389,7 @@ export const register: Register = on => {
           </Text>
         </Box>
         {list.length === 0 && <Text dimColor>한글로 프롬프트를 쓰면 여기에 쌓입니다.</Text>}
-        {list.map(one => (
+        {list.map((one, n) => (
           <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1}>
             <Text dimColor>{one.source}</Text>
             <Box flexDirection="column" marginTop={1}>
@@ -378,6 +407,12 @@ export const register: Register = on => {
                 ))}
               </Box>
             )}
+            {/* 패널 글자는 선택이 안 되는 화면이 있어 복사 버튼을 따로 둔다 */}
+            <Box gap={1} marginTop={1}>
+              {one.options.map((option, i) => (
+                <Button key={`copy-${n}-${i}`} dimColor label={`${i + 1} 복사`} onPress={press => void copyText($, option, press.surface)} />
+              ))}
+            </Box>
           </Box>
         ))}
       </Box>

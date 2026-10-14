@@ -2,7 +2,7 @@ import type { PromptEditInput, PromptEditResult, RenderElement } from 'claude-co
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { formatTokens, glossaryPrompt, isKorean, parseReply, parseTermArgs } from './register'
+import { formatTokens, glossaryPrompt, isKorean, parseReply, parseTermArgs, pickedNumber } from './register'
 
 const REPLY = `1. Write tests for this function.
 2. Add tests here.
@@ -78,6 +78,11 @@ test('한글 프롬프트를 보내면 입력창 위에 영어 추천이 뜬다'
   mock.store(on)
   mock.env(on, { HOME: '/home/me' })
   const files = mockFs(on)
+  const copied: string[] = []
+  on('ui.copy', ($, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
   on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
 
@@ -92,7 +97,9 @@ test('한글 프롬프트를 보내면 입력창 위에 영어 추천이 뜬다'
 
   const pane = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...HISTORY })
   expect(await pane.find({ type: 'Text', text: /이 함수 테스트 좀 짜줘/ })).toBeDefined()
+  await pane.press({ key: 'copy-0-1' })
   await pane.unmount()
+  expect(copied).toEqual(['Add tests here.'])
 })
 
 test('영어 프롬프트를 보내면 지난 추천을 치운다', async ($, on) => {
@@ -294,4 +301,11 @@ test('모르는 용어를 띠에서 등록하면 용어집에 넣고 다시 번�
   expect(JSON.parse(files.get(GLOSSARY_FILE) ?? '{}')).toEqual({ 씨게더: 'cigt' })
   expect(sent).toHaveLength(2)
   expect(sent[1]).toContain('씨게더 → cigt')
+})
+
+test('영문 자판의 Option+숫자 글자도 번호로 읽는다', () => {
+  expect(pickedNumber({ key: '™' }, '™')).toBe(2)
+  expect(pickedNumber({ key: '2', meta: true }, '™')).toBe(2)
+  expect(pickedNumber({ key: '2' }, '2')).toBeNaN()
+  expect(pickedNumber(undefined, '™')).toBeNaN()
 })
