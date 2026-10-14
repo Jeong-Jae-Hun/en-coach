@@ -3,7 +3,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Suggestion } from '../types'
 
-const DEBOUNCE_MS = 1200
+const AUTO_SECONDS = 3
 const HISTORY_LIMIT = 50
 const PANE = 'en-coach-history'
 const MIN_LENGTH = 6
@@ -12,6 +12,7 @@ const suggestion = atom({ plugin: 'en-coach', key: 'suggestion' } as const, null
 const isBusy = atom({ plugin: 'en-coach', key: 'isBusy' } as const, false)
 const isHidden = atom({ plugin: 'en-coach', key: 'isHidden' } as const, false)
 const history = atom({ plugin: 'en-coach', key: 'history' } as const, [])
+const draft = atom({ plugin: 'en-coach', key: 'draft' } as const, null)
 const usage = atom({ plugin: 'en-coach', key: 'usage' } as const, { calls: 0, input: 0, output: 0 })
 
 const SYSTEM = `You help a Korean developer learn to write prompts for an AI coding agent in English.
@@ -83,8 +84,33 @@ const suggest = async ($: EngineInterface, text: string) => {
   }
 }
 
+// 타이핑이 멈추면 초를 세다가 0이 되면 번역한다 — 버튼으로 바로 당길 수 있다
+let tick: Timer | undefined
+
+const cancelDraft = async ($: EngineInterface) => {
+  tick?.cancel()
+  tick = undefined
+  await update($, draft, () => null)
+}
+
+const translateNow = async ($: EngineInterface, text: string) => {
+  await cancelDraft($)
+  await suggest($, text)
+}
+
+const countDown = async ($: EngineInterface) => {
+  const d = await read($, draft)
+  if (d === null) {
+    return
+  }
+  if (d.secondsLeft <= 1) {
+    await translateNow($, d.text)
+    return
+  }
+  await update($, draft, () => ({ ...d, secondsLeft: d.secondsLeft - 1 }))
+}
+
 export const register: Register = on => {
-  let pending: Timer | undefined
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -102,12 +128,15 @@ export const register: Register = on => {
     return { text: hidden ? '영어 추천을 껐습니다.' : '영어 추천을 켰습니다.' }
   })
 
-  // 타이핑이 멈춘 뒤에만 번역한다 — 키 입력마다 Haiku를 부르지 않게
+  // 키 입력마다 카운트다운을 처음부터 다시 센다 — 타이핑 중엔 Haiku를 부르지 않게
   on('prompt.edit', async ($, e, next) => {
     const box = await next(e)
-    pending?.cancel()
-    if (isKorean(box.text)) {
-      pending = $.clock.after(DEBOUNCE_MS, () => void suggest($, box.text))
+    tick?.cancel()
+    if (isKorean(box.text) && (await read($, suggestion))?.source !== box.text) {
+      await update($, draft, () => ({ text: box.text, secondsLeft: AUTO_SECONDS }))
+      tick = $.clock.every(1000, () => void countDown($))
+    } else {
+      await cancelDraft($)
     }
 
     return box
@@ -116,7 +145,7 @@ export const register: Register = on => {
   // 붙여넣고 바로 보내거나 edit 이벤트가 없는 화면(데스크톱 앱 등)에서도 추천이 뜨게
   // 보낸 프롬프트가 한글이면 그 문장의 추천으로 바꾸고, 아니면 지난 추천을 치운다
   on('prompt.submit', async ($, e, next) => {
-    pending?.cancel()
+    await cancelDraft($)
     if (isKorean(e.text)) {
       $.clock.after(0, () => void suggest($, e.text))
     } else {
@@ -131,31 +160,36 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const s = await read($, suggestion)
     const busy = await read($, isBusy)
-    if (e.props.hasSurvey || (await read($, isHidden)) || (s === null && !busy)) {
+    const d = await read($, draft)
+    if (e.props.hasSurvey || (await read($, isHidden)) || (s === null && !busy && d === null)) {
       return next(e)
     }
 
     const { Box, Text, Button } = $.ui.resolve(e)
-    if (s === null) {
-      return <Text dimColor>번역 중…</Text>
-    }
 
     return (
       <Box flexDirection="column" gap={1}>
         <Box justifyContent="space-between">
-          <Text dimColor>{busy ? '번역 중…' : 'English'}</Text>
+          {d !== null ? (
+            <Box>
+              <Button key="translate" label="번역" onPress={() => translateNow($, d.text)} />
+              <Text dimColor> {d.secondsLeft}초 뒤 자동 번역</Text>
+            </Box>
+          ) : (
+            <Text dimColor>{busy ? '번역 중…' : 'English'}</Text>
+          )}
           <Box gap={1}>
             <Button key="history" label="기록" onPress={() => $.ui.open({ id: PANE, title: '영어 추천 기록' })} />
-            <Button key="clear" label="닫기" onPress={() => update($, suggestion, () => null)} />
+            {s !== null && <Button key="clear" label="닫기" onPress={() => update($, suggestion, () => null)} />}
           </Box>
         </Box>
-        {s.options.map((option, i) => (
+        {s?.options.map((option, i) => (
           <Box>
             <Button key={`use-${i}`} label="넣기" onPress={() => $.prompt.fill({ text: option, mode: 'replace' })} />
             <Text> {option}</Text>
           </Box>
         ))}
-        {s.notes.map(note => (
+        {s?.notes.map(note => (
           <Text dimColor>· {note}</Text>
         ))}
       </Box>

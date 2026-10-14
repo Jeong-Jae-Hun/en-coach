@@ -1,4 +1,4 @@
-import type { RenderElement } from 'claude-code'
+import type { PromptEditInput, PromptEditResult, RenderElement } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import { isKorean, parseReply } from './register'
@@ -81,5 +81,48 @@ test('영어 프롬프트를 보내면 지난 추천을 치운다', async ($, on
 
   const ui = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
   expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+const KOREAN = '이 함수 테스트 좀 짜줘'
+const typeKorean = {
+  origin: { kind: 'composer' },
+  text: '',
+  cursor: 0,
+  start: 0,
+  end: 0,
+  inputText: KOREAN,
+} as const
+
+// 엔진은 prompt.edit 를 올리지만 타입의 prompt 명사엔 edit 이 없다 — 사람이 치는 걸 흉내 내려고 연다
+const typeInto = ($: unknown) =>
+  ($ as { prompt: { edit: (e: PromptEditInput) => Promise<PromptEditResult> } }).prompt.edit(typeKorean)
+
+test('타이핑을 멈추면 초를 세다가 자동 번역한다', async ($, on) => {
+  const clock = mock.clock(on)
+  on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
+  on('prompt.edit', ($, e) => ({ text: e.inputText, cursor: e.inputText.length }))
+
+  await typeInto($)
+  const ui = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /3초 뒤 자동 번역/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeUndefined()
+  await ui.unmount()
+
+  await clock.advance(3000)
+  const after = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
+  expect(await after.find({ type: 'Text', text: /Write tests for this function/ })).toBeDefined()
+  await after.unmount()
+})
+
+test('번역 버튼을 누르면 기다리지 않고 바로 번역한다', async ($, on) => {
+  mock.clock(on)
+  on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
+  on('prompt.edit', ($, e) => ({ text: e.inputText, cursor: e.inputText.length }))
+
+  await typeInto($)
+  const ui = await $.ui.mount({ plugin: 'en-coach', surface: 'desktop', ...BAND })
+  await ui.press({ key: 'translate' })
+  expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeDefined()
   await ui.unmount()
 })
