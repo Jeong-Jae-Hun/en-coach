@@ -6,6 +6,7 @@ export type Suggestion = {
   source: string
   options: string[]
   notes: string[]
+  unknown: string[]
 }
 
 declare module 'claude-code' {

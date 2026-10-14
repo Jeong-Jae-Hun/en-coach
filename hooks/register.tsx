@@ -25,6 +25,7 @@ Given a Korean prompt, reply in exactly this format and nothing else:
 - <tip in Korean on one key expression, e.g. "보기가 불편하다 → hard to read">
 - <optional second tip in Korean>
 Write the tips in Korean, never English.
+Then, for each proper noun, product or internal name, or slang whose English form you are not sure of and that the glossary does not cover, add one line: ? <the Korean term as written>
 Keep code identifiers, file paths, commands and English terms unchanged.`
 
 export const isKorean = (text: string) =>
@@ -40,13 +41,18 @@ export const parseReply = (source: string, reply: string): Suggestion => {
   const notes = lines
     .filter(line => /^[-*·•]\s+/.test(line))
     .map(line => line.replace(/^[-*·•]\s+/, ''))
+  const unknown = lines
+    .filter(line => /^\?\s+/.test(line))
+    .map(line => line.replace(/^\?\s+/, ''))
+    .filter(term => term.length > 0 && source.includes(term))
 
-  return { source, options, notes }
+  return { source, options, notes, unknown }
 }
 
 // ─── 용어집 ───
-// $.store 는 세션을 넘어 남는다(이 머신 한정). 키는 한글 표현, 값은 늘 쓸 영어 표기
-const GLOSSARY_KEY = 'glossary'
+// 파일로 둬서 dotfiles 처럼 git 으로 머신 간 동기화할 수 있게 한다.
+// EN_COACH_GLOSSARY 로 경로를 바꾼다(앞의 ~ 는 HOME). 없으면 ~/.claude/en-coach-glossary.json
+const LEGACY_STORE_KEY = 'glossary'
 
 type Glossary = Record<string, string>
 
@@ -81,16 +87,45 @@ export const glossaryPrompt = (text: string, glossary: Glossary) => {
     .join('\n')}\n\nKorean prompt:\n${text}`
 }
 
-const readGlossary = async ($: EngineInterface) => ((await $.store.get(GLOSSARY_KEY)) ?? {}) as Glossary
+const glossaryPath = async ($: EngineInterface) => {
+  const home = (await $.env.get('HOME')) ?? ''
+  const raw = (await $.env.get('EN_COACH_GLOSSARY')) ?? '~/.claude/en-coach-glossary.json'
+
+  return raw.replace(/^~(?=\/)/, home)
+}
+
+export const sortGlossary = (glossary: Glossary): Glossary =>
+  Object.fromEntries(Object.entries(glossary).sort(([a], [b]) => a.localeCompare(b, 'ko')))
+
+const writeGlossary = async ($: EngineInterface, glossary: Glossary) =>
+  $.fs.write(await glossaryPath($), `${JSON.stringify(sortGlossary(glossary), null, 2)}\n`)
+
+// 예전 버전이 $.store 에 넣어 둔 용어는 파일로 합친 뒤 지운다 — 등록한 용어를 잃지 않게
+const readGlossary = async ($: EngineInterface): Promise<Glossary> => {
+  const path = await glossaryPath($)
+  const fromFile = (await $.fs.exists(path)) ? (JSON.parse(await $.fs.read(path)) as Glossary) : {}
+  const legacy = (await $.store.get(LEGACY_STORE_KEY)) as Glossary | undefined
+  if (legacy === undefined) {
+    return fromFile
+  }
+  const merged = { ...legacy, ...fromFile }
+  await writeGlossary($, merged)
+  await $.store.delete(LEGACY_STORE_KEY)
+
+  return merged
+}
+
+const addTerm = async ($: EngineInterface, from: string, to: string) =>
+  writeGlossary($, { ...(await readGlossary($)), [from]: to })
 
 export const formatTokens = (n: number) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`)
 
 // 새 번역이 시작되면 이전 요청은 끊는다
 let stop = new AbortController()
 
-const suggest = async ($: EngineInterface, text: string) => {
+const suggest = async ($: EngineInterface, text: string, force = false) => {
   const current = await read($, suggestion)
-  if (current?.source === text) {
+  if (!force && current?.source === text) {
     return
   }
 
@@ -125,6 +160,16 @@ const suggest = async ($: EngineInterface, text: string) => {
       await update($, isBusy, () => false)
     }
   }
+}
+
+// 띠에서 바로 등록한 용어로 같은 문장을 다시 번역한다
+const saveTerm = async ($: EngineInterface, term: string, english: string, source: string) => {
+  const to = english.trim()
+  if (to === '') {
+    return
+  }
+  await addTerm($, term, to)
+  await suggest($, source, true)
 }
 
 // 타이핑이 멈추면 초를 세다가 0이 되면 번역한다 — 버튼으로 바로 당길 수 있다
@@ -173,12 +218,12 @@ export const register: Register = on => {
     const cmd = parseTermArgs(e.args)
     const glossary = await readGlossary($)
     if (cmd.kind === 'add') {
-      await $.store.set(GLOSSARY_KEY, { ...glossary, [cmd.from]: cmd.to })
+      await addTerm($, cmd.from, cmd.to)
       return { text: `용어 추가: ${cmd.from} → ${cmd.to}` }
     }
     if (cmd.kind === 'remove') {
       const { [cmd.from]: removed, ...rest } = glossary
-      await $.store.set(GLOSSARY_KEY, rest)
+      await writeGlossary($, rest)
       return { text: removed === undefined ? `없는 용어: ${cmd.from}` : `용어 삭제: ${cmd.from}` }
     }
     const lines = Object.entries(glossary).map(([from, to]) => `- ${from} → ${to}`)
@@ -249,7 +294,10 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const table = $.ui.resolve(e)
+    const { Box, Text, Button } = table
+    // 입력칸이 없는 화면(모바일 등)에선 명령어 안내로 대신한다
+    const Input = 'Input' in table ? table.Input : undefined
 
     return (
       <Box flexDirection="column" gap={1}>
@@ -276,6 +324,24 @@ export const register: Register = on => {
         {s?.notes.map(note => (
           <Text dimColor>· {note}</Text>
         ))}
+        {s !== null && s.unknown.length > 0 && (
+          <Box flexDirection="column">
+            <Text color="warning">모르는 용어가 있어요. 영어 표기를 적어 용어집에 추가하면 다시 번역합니다.</Text>
+            {s.unknown.map(term =>
+              Input ? (
+                <Input
+                  key={`term-${term}`}
+                  label={term}
+                  placeholder="영어 표기"
+                  submitLabel="추가"
+                  onSubmit={(value: string) => void saveTerm($, term, value, s.source)}
+                />
+              ) : (
+                <Text dimColor>/en-term {term}=영어표기</Text>
+              ),
+            )}
+          </Box>
+        )}
       </Box>
     )
   })
