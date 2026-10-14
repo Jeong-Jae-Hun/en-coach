@@ -42,6 +42,12 @@ test('한글 프롬프트만 번역 대상으로 본다', () => {
   expect(isKorean('짧음')).toBe(false)
 })
 
+test('구분선이 없어도 팁 줄을 문장으로 착각하지 않는다', () => {
+  const s = parseReply('원문', REPLY.replace('---\n', ''))
+  expect(s.options).toEqual(['Write tests for this function.', 'Add tests here.'])
+  expect(s.notes).toHaveLength(1)
+})
+
 test('응답을 추천 문장과 노트로 나눈다', () => {
   const s = parseReply('원문', REPLY)
   expect(s.options).toEqual(['Write tests for this function.', 'Add tests here.'])

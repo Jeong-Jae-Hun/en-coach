@@ -28,16 +28,16 @@ Keep code identifiers, file paths, commands and English terms unchanged.`
 export const isKorean = (text: string) =>
   text.trim().length >= MIN_LENGTH && !text.trimStart().startsWith('/') && /[가-힣]/.test(text)
 
+// 구분선(---)을 빼먹는 응답이 있어 줄 모양으로 가른다: 번호 줄만 문장, 글머리표 줄만 팁
 export const parseReply = (source: string, reply: string): Suggestion => {
-  const [head = '', tail = ''] = reply.split(/^---\s*$/m)
-  const options = head
-    .split('\n')
-    .map(line => line.replace(/^\s*\d+[.)]\s*/, '').trim())
-    .filter(line => line.length > 0)
-  const notes = tail
-    .split('\n')
-    .map(line => line.replace(/^\s*[-*]\s*/, '').trim())
-    .filter(line => line.length > 0)
+  const lines = reply.split('\n').map(line => line.trim())
+  const options = lines
+    .filter(line => /^\d+[.)]\s+/.test(line))
+    .map(line => line.replace(/^\d+[.)]\s+/, ''))
+    .slice(0, 2)
+  const notes = lines
+    .filter(line => /^[-*·•]\s+/.test(line))
+    .map(line => line.replace(/^[-*·•]\s+/, ''))
 
   return { source, options, notes }
 }
