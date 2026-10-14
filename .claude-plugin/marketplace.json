@@ -1,0 +1,5 @@
+{
+  "name": "en-coach",
+  "owner": { "name": "Jeong-Jae-Hun" },
+  "plugins": [{ "name": "en-coach", "source": "./" }]
+}

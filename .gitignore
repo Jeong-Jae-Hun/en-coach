@@ -1,0 +1,3 @@
+# 엔진이 로드할 때 생성하는 타입·tsconfig
+.claude-plugin/types/
+tsconfig.json
