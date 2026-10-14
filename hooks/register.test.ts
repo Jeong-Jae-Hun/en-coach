@@ -1,7 +1,7 @@
 import type { PromptEditInput, PromptEditResult, RenderElement } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { formatTokens, isKorean, parseReply } from './register'
+import { formatTokens, glossaryPrompt, isKorean, parseReply, parseTermArgs } from './register'
 
 const REPLY = `1. Write tests for this function.
 2. Add tests here.
@@ -61,6 +61,7 @@ test('응답을 추천 문장과 노트로 나눈다', () => {
 
 test('한글 프롬프트를 보내면 입력창 위에 영어 추천이 뜬다', async ($, on) => {
   const clock = mock.clock(on)
+  mock.store(on)
   on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
 
@@ -80,6 +81,7 @@ test('한글 프롬프트를 보내면 입력창 위에 영어 추천이 뜬다'
 
 test('영어 프롬프트를 보내면 지난 추천을 치운다', async ($, on) => {
   const clock = mock.clock(on)
+  mock.store(on)
   // 띠가 양보하면 아래(엔진 자리)의 기본 그림이 그려진다
   on('ui.render', ($, e) => h($.ui.resolve(e).Text, null, 'engine') as RenderElement)
   on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
@@ -111,6 +113,7 @@ const typeInto = ($: unknown) =>
 
 test('타이핑을 멈추면 초를 세다가 자동 번역한다', async ($, on) => {
   const clock = mock.clock(on)
+  mock.store(on)
   on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
   on('prompt.edit', ($, e) => ({ text: e.inputText, cursor: e.inputText.length }))
 
@@ -128,6 +131,7 @@ test('타이핑을 멈추면 초를 세다가 자동 번역한다', async ($, on
 
 test('번역 버튼을 누르면 기다리지 않고 바로 번역한다', async ($, on) => {
   mock.clock(on)
+  mock.store(on)
   on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
   on('prompt.edit', ($, e) => ({ text: e.inputText, cursor: e.inputText.length }))
 
@@ -151,6 +155,7 @@ const pressKey = ($: unknown, text: string, key: PromptEditInput['key']) =>
 
 test('Ctrl/Option+숫자를 누르면 그 번호의 영어 문장으로 바꾼다', async ($, on) => {
   const clock = mock.clock(on)
+  mock.store(on)
   on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
   on('prompt.edit', ($, e) => ({ text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
@@ -166,4 +171,35 @@ test('Ctrl/Option+숫자를 누르면 그 번호의 영어 문장으로 바꾼�
 
   const withCtrl = await pressKey($, KOREAN, { key: '1', ctrl: true })
   expect(withCtrl.text).toBe('Write tests for this function.')
+})
+
+test('용어 명령을 목록·추가·삭제로 읽는다', () => {
+  expect(parseTermArgs('')).toEqual({ kind: 'list' })
+  expect(parseTermArgs('씨미=ci.me')).toEqual({ kind: 'add', from: '씨미', to: 'ci.me' })
+  expect(parseTermArgs(' -씨미 ')).toEqual({ kind: 'remove', from: '씨미' })
+})
+
+test('문장에 나온 용어만 프롬프트에 싣는다', () => {
+  const glossary = { 씨미: 'ci.me', 마플: 'Marpple' }
+  const prompt = glossaryPrompt('씨미 배포해줘', glossary)
+  expect(prompt).toContain('씨미 → ci.me')
+  expect(prompt).not.toContain('Marpple')
+  expect(glossaryPrompt('테스트 짜줘', glossary)).toBe('테스트 짜줘')
+})
+
+test('추가한 용어는 다음 번역 요청에 들어간다', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const sent: string[] = []
+  on('model.complete', ($, e) => {
+    sent.push(e.prompt)
+    return { value: { isAnswered: true, text: REPLY, usage } }
+  })
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+
+  await $.command.run({ command: 'en-term', args: '씨미=ci.me' } as never)
+  await $.prompt.submit({ text: '씨미 배포 좀 해줘', wait: false, origin: { kind: 'composer' } })
+  await clock.advance(10)
+
+  expect(sent[0]).toContain('씨미 → ci.me')
 })

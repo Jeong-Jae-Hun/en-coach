@@ -44,6 +44,45 @@ export const parseReply = (source: string, reply: string): Suggestion => {
   return { source, options, notes }
 }
 
+// ─── 용어집 ───
+// $.store 는 세션을 넘어 남는다(이 머신 한정). 키는 한글 표현, 값은 늘 쓸 영어 표기
+const GLOSSARY_KEY = 'glossary'
+
+type Glossary = Record<string, string>
+
+export type TermCommand =
+  | { kind: 'list' }
+  | { kind: 'add'; from: string; to: string }
+  | { kind: 'remove'; from: string }
+
+export const parseTermArgs = (args: string): TermCommand => {
+  const text = args.trim()
+  if (text === '') {
+    return { kind: 'list' }
+  }
+  if (text.startsWith('-')) {
+    return { kind: 'remove', from: text.slice(1).trim() }
+  }
+  const [from = '', ...rest] = text.split('=')
+  const to = rest.join('=').trim()
+
+  return to === '' ? { kind: 'list' } : { kind: 'add', from: from.trim(), to }
+}
+
+// 문장에 나온 용어만 보낸다 — 용어집이 커져도 호출마다 전부 싣지 않게
+export const glossaryPrompt = (text: string, glossary: Glossary) => {
+  const used = Object.entries(glossary).filter(([from]) => text.includes(from))
+  if (used.length === 0) {
+    return text
+  }
+
+  return `Glossary (always use exactly these English forms):\n${used
+    .map(([from, to]) => `${from} → ${to}`)
+    .join('\n')}\n\nKorean prompt:\n${text}`
+}
+
+const readGlossary = async ($: EngineInterface) => ((await $.store.get(GLOSSARY_KEY)) ?? {}) as Glossary
+
 export const formatTokens = (n: number) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`)
 
 // 새 번역이 시작되면 이전 요청은 끊는다
@@ -61,7 +100,7 @@ const suggest = async ($: EngineInterface, text: string) => {
   await update($, isBusy, () => true)
   try {
     const r = await $.model.complete(
-      { model: MODEL, system: SYSTEM, prompt: text, effort: 'low', maxTokens: 400, timeoutMs: 15000 },
+      { model: MODEL, system: SYSTEM, prompt: glossaryPrompt(text, await readGlossary($)), effort: 'low', maxTokens: 400, timeoutMs: 15000 },
       { signal: mine.signal },
     )
     // 끊긴 요청도 비용은 든다 — 응답 여부와 상관없이 센다
@@ -121,8 +160,32 @@ export const register: Register = on => {
       name: 'en',
       description: '영어 프롬프트 추천 켜기/끄기',
     })
+    await $.command.register({
+      name: 'en-term',
+      description: '영어 추천 용어집: 목록 / 한글=영어 추가 / -한글 삭제',
+      argumentHint: '[씨미=ci.me | -씨미]',
+    })
 
     return next(e)
+  })
+
+  on('command.run', { command: 'en-term' }, async ($, e) => {
+    const cmd = parseTermArgs(e.args)
+    const glossary = await readGlossary($)
+    if (cmd.kind === 'add') {
+      await $.store.set(GLOSSARY_KEY, { ...glossary, [cmd.from]: cmd.to })
+      return { text: `용어 추가: ${cmd.from} → ${cmd.to}` }
+    }
+    if (cmd.kind === 'remove') {
+      const { [cmd.from]: removed, ...rest } = glossary
+      await $.store.set(GLOSSARY_KEY, rest)
+      return { text: removed === undefined ? `없는 용어: ${cmd.from}` : `용어 삭제: ${cmd.from}` }
+    }
+    const lines = Object.entries(glossary).map(([from, to]) => `- ${from} → ${to}`)
+
+    return {
+      text: lines.length === 0 ? '용어집이 비었습니다. `/en-term 씨미=ci.me` 처럼 추가하세요.' : `용어집\n${lines.join('\n')}`,
+    }
   })
 
   on('command.run', { command: 'en' }, async $ => {
@@ -205,7 +268,7 @@ export const register: Register = on => {
           </Box>
         </Box>
         {s?.options.map((option, i) => (
-          <Box>
+          <Box alignItems="flex-start">
             <Button key={`use-${i}`} label="넣기" hotkey={`${i + 1}`} onPress={() => $.prompt.fill({ text: option, mode: 'replace' })} />
             <Text> {option}</Text>
           </Box>
