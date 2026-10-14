@@ -129,7 +129,22 @@ export const register: Register = on => {
   })
 
   // 키 입력마다 카운트다운을 처음부터 다시 센다 — 타이핑 중엔 Haiku를 부르지 않게
+  // 입력창에 글이 있을 땐 숫자가 그대로 입력돼야 하니 Option(Alt)+숫자만 가로챈다.
+  // 입력창이 비었을 땐 띠의 버튼 hotkey 가 맨 숫자를 받는다 (엔진 규칙)
   on('prompt.edit', async ($, e, next) => {
+    const picked = e.key?.meta && !e.key.ctrl ? Number(e.key.key) : NaN
+    if (picked === 3) {
+      const d = await read($, draft)
+      if (d !== null) {
+        void translateNow($, d.text)
+        return { text: e.text, cursor: e.cursor }
+      }
+    }
+    const option = (await read($, suggestion))?.options[picked - 1]
+    if (option !== undefined) {
+      return { text: option, cursor: option.length }
+    }
+
     const box = await next(e)
     tick?.cancel()
     if (isKorean(box.text) && (await read($, suggestion))?.source !== box.text) {
@@ -172,11 +187,11 @@ export const register: Register = on => {
         <Box justifyContent="space-between">
           {d !== null ? (
             <Box>
-              <Button key="translate" label="번역" onPress={() => translateNow($, d.text)} />
-              <Text dimColor> {d.secondsLeft}초 뒤 자동 번역</Text>
+              <Button key="translate" label="번역" hotkey="3" onPress={() => translateNow($, d.text)} />
+              <Text dimColor> {d.secondsLeft}초 뒤 자동 번역 · ⌥3 바로 번역</Text>
             </Box>
           ) : (
-            <Text dimColor>{busy ? '번역 중…' : 'English'}</Text>
+            <Text dimColor>{busy ? '번역 중…' : 'English · ⌥+숫자로 넣기'}</Text>
           )}
           <Box gap={1}>
             <Button key="history" label="기록" onPress={() => $.ui.open({ id: PANE, title: '영어 추천 기록' })} />
@@ -185,7 +200,7 @@ export const register: Register = on => {
         </Box>
         {s?.options.map((option, i) => (
           <Box>
-            <Button key={`use-${i}`} label="넣기" onPress={() => $.prompt.fill({ text: option, mode: 'replace' })} />
+            <Button key={`use-${i}`} label="넣기" hotkey={`${i + 1}`} onPress={() => $.prompt.fill({ text: option, mode: 'replace' })} />
             <Text> {option}</Text>
           </Box>
         ))}

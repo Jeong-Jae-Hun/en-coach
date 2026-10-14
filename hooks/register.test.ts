@@ -126,3 +126,30 @@ test('번역 버튼을 누르면 기다리지 않고 바로 번역한다', async
   expect(await ui.find({ type: 'Text', text: /Write tests for this function/ })).toBeDefined()
   await ui.unmount()
 })
+
+const pressKey = ($: unknown, text: string, key: PromptEditInput['key']) =>
+  ($ as { prompt: { edit: (e: PromptEditInput) => Promise<PromptEditResult> } }).prompt.edit({
+    origin: { kind: 'composer' },
+    key,
+    text,
+    cursor: text.length,
+    start: text.length,
+    end: text.length,
+    inputText: key?.key ?? '',
+  })
+
+test('Option+숫자를 누르면 그 번호의 영어 문장으로 바꾼다', async ($, on) => {
+  const clock = mock.clock(on)
+  on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
+  on('prompt.edit', ($, e) => ({ text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }))
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+
+  await $.prompt.submit({ text: KOREAN, wait: false, origin: { kind: 'composer' } })
+  await clock.advance(10)
+
+  const plain = await pressKey($, KOREAN, { key: '2' })
+  expect(plain.text).toBe(`${KOREAN}2`)
+
+  const picked = await pressKey($, KOREAN, { key: '2', meta: true })
+  expect(picked.text).toBe('Add tests here.')
+})
