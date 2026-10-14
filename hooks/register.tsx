@@ -4,6 +4,8 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { Suggestion } from '../types'
 
 const AUTO_SECONDS = 3
+// 가장 싼 모델($0.10/$0.50 per MTok). 구형 Haiku 4.5가 10배 비싸 별칭 대신 ID로 고정한다
+const MODEL = 'claude-haiku-5-5'
 const HISTORY_LIMIT = 50
 const PANE = 'en-coach-history'
 const MIN_LENGTH = 6
@@ -59,7 +61,7 @@ const suggest = async ($: EngineInterface, text: string) => {
   await update($, isBusy, () => true)
   try {
     const r = await $.model.complete(
-      { model: 'haiku', system: SYSTEM, prompt: text, effort: 'low', maxTokens: 400, timeoutMs: 15000 },
+      { model: MODEL, system: SYSTEM, prompt: text, effort: 'low', maxTokens: 400, timeoutMs: 15000 },
       { signal: mine.signal },
     )
     // 끊긴 요청도 비용은 든다 — 응답 여부와 상관없이 센다
