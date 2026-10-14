@@ -30,3 +30,7 @@ user 스코프로 설치하면 데스크톱 앱의 Code 탭에서도 동작합�
 claude plugin validate .
 claude plugin test .
 ```
+
+## 라이선스
+
+MIT
