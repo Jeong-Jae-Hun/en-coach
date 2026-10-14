@@ -292,16 +292,14 @@ export const register: Register = on => {
     return box
   })
 
-  // 붙여넣고 바로 보내거나 edit 이벤트가 없는 화면(데스크톱 앱 등)에서도 추천이 뜨게
-  // 보낸 프롬프트가 한글이면 그 문장의 추천으로 바꾸고, 아니면 지난 추천을 치운다
+  // 엔터를 쳤으면 그 문장은 끝났다 — 카운트다운·진행 중 번역을 멈추고 띠를 치운다.
+  // 컨트롤러를 갈아 끼워, 끊겼는데도 답이 와 버린 요청이 띠를 다시 채우지 못하게 한다
   on('prompt.submit', async ($, e, next) => {
     await cancelDraft($)
-    if (isKorean(e.text)) {
-      $.clock.after(0, () => void suggest($, e.text))
-    } else {
-      stop.abort()
-      await update($, suggestion, () => null)
-    }
+    stop.abort()
+    stop = new AbortController()
+    await update($, isBusy, () => false)
+    await update($, suggestion, () => null)
 
     return next(e)
   })
