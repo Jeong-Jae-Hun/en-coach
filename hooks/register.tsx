@@ -129,10 +129,11 @@ export const register: Register = on => {
   })
 
   // 키 입력마다 카운트다운을 처음부터 다시 센다 — 타이핑 중엔 Haiku를 부르지 않게
-  // 입력창에 글이 있을 땐 숫자가 그대로 입력돼야 하니 Option(Alt)+숫자만 가로챈다.
+  // 입력창에 글이 있을 땐 숫자가 그대로 입력돼야 하니 Ctrl/Option+숫자만 가로챈다.
+  // Ctrl+숫자는 구식 터미널이 따로 보내지 않아 Option 도 같이 받는다
   // 입력창이 비었을 땐 띠의 버튼 hotkey 가 맨 숫자를 받는다 (엔진 규칙)
   on('prompt.edit', async ($, e, next) => {
-    const picked = e.key?.meta && !e.key.ctrl ? Number(e.key.key) : NaN
+    const picked = e.key?.ctrl || e.key?.meta ? Number(e.key.key) : NaN
     if (picked === 3) {
       const d = await read($, draft)
       if (d !== null) {
@@ -188,10 +189,10 @@ export const register: Register = on => {
           {d !== null ? (
             <Box>
               <Button key="translate" label="번역" hotkey="3" onPress={() => translateNow($, d.text)} />
-              <Text dimColor> {d.secondsLeft}초 뒤 자동 번역 · ⌥3 바로 번역</Text>
+              <Text dimColor> {d.secondsLeft}초 뒤 자동 번역 · ⌃3 바로 번역</Text>
             </Box>
           ) : (
-            <Text dimColor>{busy ? '번역 중…' : 'English · ⌥+숫자로 넣기'}</Text>
+            <Text dimColor>{busy ? '번역 중…' : 'English · ⌃/⌥+숫자로 넣기'}</Text>
           )}
           <Box gap={1}>
             <Button key="history" label="기록" onPress={() => $.ui.open({ id: PANE, title: '영어 추천 기록' })} />

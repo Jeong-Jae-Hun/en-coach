@@ -138,7 +138,7 @@ const pressKey = ($: unknown, text: string, key: PromptEditInput['key']) =>
     inputText: key?.key ?? '',
   })
 
-test('Option+숫자를 누르면 그 번호의 영어 문장으로 바꾼다', async ($, on) => {
+test('Ctrl/Option+숫자를 누르면 그 번호의 영어 문장으로 바꾼다', async ($, on) => {
   const clock = mock.clock(on)
   on('model.complete', () => ({ value: { isAnswered: true, text: REPLY, usage } }))
   on('prompt.edit', ($, e) => ({ text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }))
@@ -150,6 +150,9 @@ test('Option+숫자를 누르면 그 번호의 영어 문장으로 바꾼다', a
   const plain = await pressKey($, KOREAN, { key: '2' })
   expect(plain.text).toBe(`${KOREAN}2`)
 
-  const picked = await pressKey($, KOREAN, { key: '2', meta: true })
-  expect(picked.text).toBe('Add tests here.')
+  const withOption = await pressKey($, KOREAN, { key: '2', meta: true })
+  expect(withOption.text).toBe('Add tests here.')
+
+  const withCtrl = await pressKey($, KOREAN, { key: '1', ctrl: true })
+  expect(withCtrl.text).toBe('Write tests for this function.')
 })
