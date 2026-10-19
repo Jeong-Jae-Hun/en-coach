@@ -159,6 +159,25 @@ test('기록 패널은 닫기 버튼으로 닫는다', async ($, on) => {
   expect(closed).toEqual(['en-coach-history'])
 })
 
+test('/en-history 는 기록 패널을 열고 다시 치면 닫는다', async ($, on) => {
+  mock.store(on)
+  const open = new Set<string>()
+  on('ui.panes', () => ({ value: [...open].map(id => ({ id, title: id }) as never) }))
+  on('ui.open', ($, e) => {
+    open.add(e.id)
+    return { value: { isPlaced: true } as never }
+  })
+  on('ui.close', ($, e) => {
+    open.delete(e.id)
+    return { value: undefined }
+  })
+
+  expect((await $.command.run({ command: 'en-history', args: '' } as never)).text).toBe('기록 패널을 열었습니다.')
+  expect([...open]).toEqual(['en-coach-history'])
+  expect((await $.command.run({ command: 'en-history', args: '' } as never)).text).toBe('기록 패널을 닫았습니다.')
+  expect([...open]).toEqual([])
+})
+
 test('프롬프트를 보내면 지난 추천을 치운다', async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)

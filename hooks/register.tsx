@@ -8,6 +8,7 @@ const AUTO_SECONDS = 3
 const MODEL = 'claude-haiku-5-5'
 const HISTORY_LIMIT = 50
 const PANE = 'en-coach-history'
+const HISTORY_PANE = { id: PANE, title: '영어 추천 기록', closeOnEscape: true } as const
 const MIN_LENGTH = 6
 
 const suggestion = atom({ plugin: 'en-coach', key: 'suggestion' } as const, null)
@@ -257,6 +258,10 @@ export const register: Register = on => {
       description: '영어 프롬프트 추천 켜기/끄기',
     })
     await $.command.register({
+      name: 'en-history',
+      description: '영어 추천 기록 패널 열기/닫기',
+    })
+    await $.command.register({
       name: 'en-term',
       description: '영어 추천 용어집: 목록 / 한글=영어 추가 / -한글 삭제',
       argumentHint: '[씨미=ci.me | -씨미]',
@@ -289,6 +294,17 @@ export const register: Register = on => {
     const hidden = await read($, isHidden)
 
     return { text: hidden ? '영어 추천을 껐습니다.' : '영어 추천을 켰습니다.' }
+  })
+
+  // 터미널에선 띠의 버튼이 Ctrl+X Tab 으로 초점을 줘야 눌려서, 명령으로도 여닫게 한다
+  on('command.run', { command: 'en-history' }, async $ => {
+    if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
+      await $.ui.close({ id: PANE })
+      return { text: '기록 패널을 닫았습니다.' }
+    }
+    await $.ui.open(HISTORY_PANE)
+
+    return { text: '기록 패널을 열었습니다.' }
   })
 
   // 키 입력마다 카운트다운을 처음부터 다시 센다 — 타이핑 중엔 Haiku를 부르지 않게
@@ -347,6 +363,8 @@ export const register: Register = on => {
     const { Box, Text, Button } = table
     // 입력칸이 없는 화면(모바일 등)에선 명령어 안내로 대신한다
     const Input = 'Input' in table ? table.Input : undefined
+    // 터미널은 왼쪽 Option 을 Alt(meta) 로 보내 글자가 안 들어온다 — 오른쪽 Option 만 글자를 넣게 설정해 둔다
+    const opt = e.surface === 'terminal' ? '오른쪽 ⌥' : '⌥'
 
     return (
       <Box flexDirection="column" gap={1}>
@@ -354,13 +372,13 @@ export const register: Register = on => {
           {d !== null ? (
             <Box>
               <Button key="translate" label="번역" hotkey="3" onPress={() => translateNow($, d.text)} />
-              <Text dimColor> {d.secondsLeft}초 뒤 자동 번역 · ⌥3 바로 번역</Text>
+              <Text dimColor> {d.secondsLeft}초 뒤 자동 번역 · {opt}3 바로 번역</Text>
             </Box>
           ) : (
-            <Text dimColor>{busy ? '번역 중…' : 'English · ⌥+숫자로 넣기'}</Text>
+            <Text dimColor>{busy ? '번역 중…' : `English · ${opt}+숫자로 넣기 · /en-history 기록`}</Text>
           )}
           <Box gap={1}>
-            <Button key="history" label="기록" onPress={() => $.ui.open({ id: PANE, title: '영어 추천 기록', closeOnEscape: true })} />
+            <Button key="history" label="기록" onPress={() => $.ui.open(HISTORY_PANE)} />
             {s !== null && <Button key="clear" label="닫기" onPress={() => update($, suggestion, () => null)} />}
           </Box>
         </Box>
