@@ -1,6 +1,6 @@
 {
   "name": "en-coach",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "한글 프롬프트를 쓰면 영어로 어떻게 쓸지 입력창 위에 추천",
   "author": {
     "name": "Jeong-Jae-Hun"
