@@ -360,7 +360,7 @@ export const register: Register = on => {
             <Text dimColor>{busy ? '번역 중…' : 'English · ⌥+숫자로 넣기'}</Text>
           )}
           <Box gap={1}>
-            <Button key="history" label="기록" onPress={() => $.ui.open({ id: PANE, title: '영어 추천 기록' })} />
+            <Button key="history" label="기록" onPress={() => $.ui.open({ id: PANE, title: '영어 추천 기록', closeOnEscape: true })} />
             {s !== null && <Button key="clear" label="닫기" onPress={() => update($, suggestion, () => null)} />}
           </Box>
         </Box>
@@ -412,9 +412,12 @@ export const register: Register = on => {
       <Box flexDirection="column" gap={1}>
         <Box justifyContent="space-between">
           <Text bold>기록 {list.length}개</Text>
-          <Text dimColor>
-            Haiku {u.calls}회 · 입력 {formatTokens(u.input)} · 출력 {formatTokens(u.output)}
-          </Text>
+          <Box gap={1}>
+            <Text dimColor>
+              Haiku {u.calls}회 · 입력 {formatTokens(u.input)} · 출력 {formatTokens(u.output)}
+            </Text>
+            <Button key="close-history" label="닫기" onPress={() => $.ui.close({ id: PANE })} />
+          </Box>
         </Box>
         {list.length === 0 && <Text dimColor>한글로 프롬프트를 쓰면 여기에 쌓입니다.</Text>}
         {list.map((one, n) => (

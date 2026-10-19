@@ -145,6 +145,20 @@ test('번역한 추천은 띠와 기록 패널에 뜬다', async ($, on) => {
   expect(copied).toEqual(['Add tests here.'])
 })
 
+test('기록 패널은 닫기 버튼으로 닫는다', async ($, on) => {
+  mock.store(on)
+  const closed: string[] = []
+  on('ui.close', ($, e) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
+
+  const pane = await $.ui.mount({ plugin: 'en-coach', surface: 'terminal', ...HISTORY })
+  await pane.press({ key: 'close-history' })
+  await pane.unmount()
+  expect(closed).toEqual(['en-coach-history'])
+})
+
 test('프롬프트를 보내면 지난 추천을 치운다', async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on)
