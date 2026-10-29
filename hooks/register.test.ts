@@ -412,3 +412,40 @@ test('영문 자판의 Option+숫자 글자도 번호로 읽는다', () => {
   expect(pickedNumber({ key: '2' }, '2')).toBeNaN()
   expect(pickedNumber(undefined, '™')).toBeNaN()
 })
+
+test('/en 으로 끄면 이 세션에선 카운트다운도 Haiku 호출도 없다', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  mock.env(on, { HOME: '/home/me' })
+  mockFs(on)
+  let calls = 0
+  on('model.complete', () => {
+    calls += 1
+    return { value: { isAnswered: true, text: REPLY, usage } }
+  })
+  echoEdit(on)
+  const open = new Set<string>()
+  on('ui.panes', () => ({ value: [...open].map(id => ({ id, title: id }) as never) }))
+  on('ui.open', ($, e) => {
+    open.add(e.id)
+    return { value: { isPlaced: true } as never }
+  })
+  on('ui.close', ($, e) => {
+    open.delete(e.id)
+    return { value: undefined }
+  })
+
+  await typeInto($)
+  await $.command.run({ command: 'en-history', args: '' } as never)
+  expect((await $.command.run({ command: 'en', args: '' } as never)).text).toContain('껐습니다')
+  expect([...open]).toEqual([])
+  await clock.advance(3000)
+  await typeInto($)
+  await clock.advance(3000)
+  expect(calls).toBe(0)
+
+  expect((await $.command.run({ command: 'en', args: '' } as never)).text).toBe('영어 추천을 켰습니다.')
+  await typeInto($)
+  await clock.advance(3000)
+  expect(calls).toBe(1)
+})

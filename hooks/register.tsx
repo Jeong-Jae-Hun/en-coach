@@ -233,6 +233,16 @@ const cancelDraft = async ($: EngineInterface) => {
   await update($, draft, () => null)
 }
 
+// 엔터를 쳤거나 끈 뒤엔 띠를 치운다 — 카운트다운·진행 중 번역을 멈춘다.
+// 컨트롤러를 갈아 끼워, 끊겼는데도 답이 와 버린 요청이 띠를 다시 채우지 못하게 한다
+const clearBand = async ($: EngineInterface) => {
+  await cancelDraft($)
+  stop.abort()
+  stop = new AbortController()
+  await update($, isBusy, () => false)
+  await update($, suggestion, () => null)
+}
+
 const translateNow = async ($: EngineInterface, text: string) => {
   await cancelDraft($)
   await suggest($, text)
@@ -255,7 +265,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'en',
-      description: '영어 프롬프트 추천 켜기/끄기',
+      description: '영어 프롬프트 추천 켜기/끄기 (이 세션만)',
     })
     await $.command.register({
       name: 'en-history',
@@ -289,11 +299,18 @@ export const register: Register = on => {
     }
   })
 
+  // $.state 는 세션 것이라 끄면 이 세션에서만 꺼진다
   on('command.run', { command: 'en' }, async $ => {
     await update($, isHidden, was => !was)
     const hidden = await read($, isHidden)
+    if (hidden) {
+      await clearBand($)
+      if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
+        await $.ui.close({ id: PANE })
+      }
+    }
 
-    return { text: hidden ? '영어 추천을 껐습니다.' : '영어 추천을 켰습니다.' }
+    return { text: hidden ? '이 세션에서 영어 추천을 껐습니다. /en 으로 다시 켭니다.' : '영어 추천을 켰습니다.' }
   })
 
   // 터미널에선 띠의 버튼이 Ctrl+X Tab 으로 초점을 줘야 눌려서, 명령으로도 여닫게 한다
@@ -313,6 +330,10 @@ export const register: Register = on => {
   // 그래도 Ctrl+숫자를 편집으로 보내는 터미널(kitty 키 프로토콜 등)을 위해 ctrl 도 받아 둔다
   // 입력창이 비었을 땐 띠의 버튼 hotkey 가 맨 숫자를 받는다 (엔진 규칙)
   on('prompt.edit', async ($, e, next) => {
+    // 꺼 두면 숫자 키도 가로채지 않고 Haiku 도 부르지 않는다
+    if (await read($, isHidden)) {
+      return next(e)
+    }
     const picked = pickedNumber(e.key, e.inputText)
     if (picked === 3) {
       const d = await read($, draft)
@@ -338,14 +359,8 @@ export const register: Register = on => {
     return box
   })
 
-  // 엔터를 쳤으면 그 문장은 끝났다 — 카운트다운·진행 중 번역을 멈추고 띠를 치운다.
-  // 컨트롤러를 갈아 끼워, 끊겼는데도 답이 와 버린 요청이 띠를 다시 채우지 못하게 한다
   on('prompt.submit', async ($, e, next) => {
-    await cancelDraft($)
-    stop.abort()
-    stop = new AbortController()
-    await update($, isBusy, () => false)
-    await update($, suggestion, () => null)
+    await clearBand($)
 
     return next(e)
   })
